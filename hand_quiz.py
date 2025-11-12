@@ -10,8 +10,8 @@ cap.set(3, 960)
 cap.set(4, 720)
 detector = HandDetector(detectionCon=0.8)
 
-# --- Font tiếng Việt ---
-font_path = "arial.ttf"  # Đặt file font Unicode (VD: Arial, Roboto, UVNVan.ttf) cùng thư mục
+#Font tiếng Việt
+font_path = "arial.ttf"  # ten font
 font = ImageFont.truetype(font_path, 32)
 
 def draw_text_unicode(img, text, pos, color=(255,255,255)):
@@ -33,24 +33,20 @@ class MCQ:
         self.resultTime = 0
 
     def draw(self, img):
-        # Vẽ nền trong suốt
         overlay = img.copy()
         cv2.rectangle(overlay, (50, 50), (910, 650), (50, 50, 50), -1)
         img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0)
-
         img = draw_text_unicode(img, self.question, (80, 80), (255, 255, 0))
         choices = [self.choice1, self.choice2, self.choice3, self.choice4]
         bboxes = []
-
+        
         for i, ch in enumerate(choices):
             x = 100 + (i % 2) * 400
             y = 250 + (i // 2) * 150
             x2, y2 = x + 300, y + 80
 
-            # Màu mặc định
             color = (255, 255, 255)
-
-            # Nếu đã chọn → tô đúng/sai
+            
             if self.showResult:
                 if i + 1 == self.answer:
                     color = (0, 255, 0)  # đúng → xanh
@@ -63,7 +59,7 @@ class MCQ:
 
         return img, bboxes
 
-# --- Đọc dữ liệu ---
+# Đọc dữ liệu của file câu hỏi
 pathCSV = "Mcqs.csv"
 with open(pathCSV, newline='\n', encoding='utf-8') as f:
     reader = csv.reader(f)
@@ -102,7 +98,7 @@ while True:
                             score += 20
                         clickCooldown = 15
 
-        # Sau 1 giây → sang câu tiếp theo
+        # Thời gian đợi sang câu tiếp theo
         if mcq.showResult and time.time() - mcq.resultTime > 1.2:
             qNo += 1
 
