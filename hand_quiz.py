@@ -110,7 +110,7 @@ while True:
         overlay = img.copy()
         cv2.rectangle(overlay, (150, 200), (800, 500), (50, 50, 50), -1)
         img = cv2.addWeighted(overlay, 0.4, img, 0.6, 0)
-        img = draw_text_unicode(img, "🎯 BÀI TRẮC NGHIỆM HOÀN THÀNH 🎯", (180, 250), (255, 255, 0))
+        img = draw_text_unicode(img, "BÀI TRẮC NGHIỆM HOÀN THÀNH", (180, 250), (255, 255, 0))
         img = draw_text_unicode(img, f"Điểm của bạn: {score}/{qTotal * 20}", (250, 350), (0, 255, 0))
 
     cv2.imshow("Hand Quiz - Minecraft Style", img)
@@ -119,3 +119,4 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
+
