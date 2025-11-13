@@ -1,118 +1,221 @@
 import cv2
-import csv
 import time
 import numpy as np
 from cvzone.HandTrackingModule import HandDetector
 from PIL import ImageFont, ImageDraw, Image
 
+# --- Cấu hình webcam ---
 cap = cv2.VideoCapture(0)
 cap.set(3, 960)
 cap.set(4, 720)
 detector = HandDetector(detectionCon=0.8)
 
-#Font tiếng Việt
-font_path = "arial.ttf"  # ten font
+# --- Font tiếng Việt ---
+font_path = "arial.ttf"
 font = ImageFont.truetype(font_path, 32)
 
-def draw_text_unicode(img, text, pos, color=(255,255,255)):
+# --- Dữ liệu câu hỏi ---
+questions = [
+    {"question": "1 + 1 = ?", "options": ["1", "2", "3", "4"], "answer": 1},
+    {"question": "Thủ đô của Việt Nam là?", "options": ["Hà Nội", "Huế", "Đà Nẵng", "TP.HCM"], "answer": 0},
+    {"question": "3 * 3 = ?", "options": ["6", "7", "8", "9"], "answer": 3},
+]
+
+# --- Biến điều khiển ---
+qNo = 0
+score = 0
+selected = -1
+answered = False
+mode = "quiz"  # quiz / draw / end
+prevX, prevY = 0, 0
+drawCanvas = np.zeros((720, 960, 3), np.uint8)
+lastSwitchTime = 0
+drawColor = (0, 0, 255)  # màu mặc định: đỏ
+hoverStartTime = [0,0,0,0]  # thời gian hover cho 4 ô câu hỏi
+
+# --- Hàm hiển thị tiếng Việt ---
+def draw_text_unicode(img, text, pos, color=(255, 255, 255)):
     img_pil = Image.fromarray(img)
     draw = ImageDraw.Draw(img_pil)
     draw.text(pos, text, font=font, fill=color)
     return np.array(img_pil)
 
-class MCQ:
-    def __init__(self, data):
-        self.question = data[0]
-        self.choice1 = data[1]
-        self.choice2 = data[2]
-        self.choice3 = data[3]
-        self.choice4 = data[4]
-        self.answer = int(data[5])
-        self.userAns = None
-        self.showResult = False
-        self.resultTime = 0
+# --- Hàm hiển thị câu hỏi (màu vàng đậm dần khi hover) ---
+def draw_question(img, qData, selected, answered):
+    global hoverStartTime
+    img = draw_text_unicode(img, f"Câu {qNo+1}: {qData['question']}", (50, 50), (255, 255, 0))
+    for i, opt in enumerate(qData["options"]):
+        x, y = 100, 150 + i * 100
+        w, h = 600, 80
+        color = (255, 255, 255)  # mặc định trắng
 
-    def draw(self, img):
-        overlay = img.copy()
-        cv2.rectangle(overlay, (50, 50), (910, 650), (50, 50, 50), -1)
-        img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0)
-        img = draw_text_unicode(img, self.question, (80, 80), (255, 255, 0))
-        choices = [self.choice1, self.choice2, self.choice3, self.choice4]
-        bboxes = []
-        
-        for i, ch in enumerate(choices):
-            x = 100 + (i % 2) * 400
-            y = 250 + (i // 2) * 150
-            x2, y2 = x + 300, y + 80
+        if answered:
+            if i == qData["answer"]:
+                color = (0, 255, 0)  # xanh - đúng
+            elif i == selected and i != qData["answer"]:
+                color = (0, 0, 255)  # đỏ - sai
+        elif selected == i:
+            # Hiệu ứng vàng đậm dần
+            elapsed = time.time() - hoverStartTime[i]
+            progress = min(1, elapsed / 2)  # 3 giây để chọn
+            # từ vàng nhạt (255,255,150) → vàng đậm (0,255,255)
+            r = int(255 * (1 - progress))
+            g = 255
+            b = int(150 * (1 - progress))
+            color = (b, g, r)
 
-            color = (255, 255, 255)
-            
-            if self.showResult:
-                if i + 1 == self.answer:
-                    color = (0, 255, 0)  # đúng → xanh
-                elif i + 1 == self.userAns and self.userAns != self.answer:
-                    color = (0, 0, 255)  # sai → đỏ
+        cv2.rectangle(img, (x, y), (x + w, y + h), color, -1)
+        img = draw_text_unicode(img, opt, (x + 20, y + 20), (0, 0, 0))
+    return img
 
-            cv2.rectangle(img, (x, y), (x2, y2), color, cv2.FILLED)
-            img = draw_text_unicode(img, ch, (x + 20, y + 20), (0, 0, 0))
-            bboxes.append((x, y, x2, y2))
-
-        return img, bboxes
-
-# Đọc dữ liệu của file câu hỏi
-pathCSV = "Mcqs.csv"
-with open(pathCSV, newline='\n', encoding='utf-8') as f:
-    reader = csv.reader(f)
-    dataAll = list(reader)[1:]
-
-mcqList = [MCQ(q) for q in dataAll]
-qNo = 0
-qTotal = len(dataAll)
-clickCooldown = 0
-score = 0
-
+# --- Vòng lặp chính ---
 while True:
     success, img = cap.read()
     img = cv2.flip(img, 1)
     hands, img = detector.findHands(img, flipType=False)
 
-    if clickCooldown > 0:
-        clickCooldown -= 1
+    # --- Nút chuyển chế độ ---
+    btnX, btnY, btnW, btnH = 760, 30, 170, 70
+    btnColor = (70, 70, 255) if mode == "quiz" else (0, 180, 0)
+    hover = False
 
-    if qNo < qTotal:
-        mcq = mcqList[qNo]
-        img, bboxes = mcq.draw(img)
+    if hands:
+        lmList = hands[0]["lmList"]
+        x, y = lmList[8][0:2]
+        fingers = detector.fingersUp(hands[0])
+        if (btnX < x < btnX + btnW) and (btnY < y < btnY + btnH):
+            hover = True
+            if time.time() - lastSwitchTime > 0.5 and fingers[1] == 1:
+                mode = "draw" if mode == "quiz" else "quiz"
+                lastSwitchTime = time.time()
 
-        if hands and not mcq.showResult:
-            lmList = hands[0]['lmList']
-            cursor = lmList[8]
-            length, _, _ = detector.findDistance(lmList[8][:2], lmList[12][:2])
-            if length < 35 and clickCooldown == 0:
-                for i, bbox in enumerate(bboxes):
-                    x1, y1, x2, y2 = bbox
-                    if x1 < cursor[0] < x2 and y1 < cursor[1] < y2:
-                        mcq.userAns = i + 1
-                        mcq.showResult = True
-                        mcq.resultTime = time.time()
-                        if mcq.userAns == mcq.answer:
-                            score += 20
-                        clickCooldown = 15
+    colorHover = tuple(min(255, c + 50) for c in btnColor) if hover else btnColor
+    cv2.rectangle(img, (btnX, btnY), (btnX + btnW, btnY + btnH), colorHover, -1)
+    img = draw_text_unicode(img, "ĐỔI CHẾ ĐỘ", (btnX + 15, btnY + 18), (255, 255, 255))
+    cv2.rectangle(img, (btnX, btnY), (btnX + btnW, btnY + btnH), (255, 255, 255), 2)
 
-        # Thời gian đợi sang câu tiếp theo
-        if mcq.showResult and time.time() - mcq.resultTime > 1.2:
-            qNo += 1
+    # =========================
+    # 🎯 CHẾ ĐỘ QUIZ
+    # =========================
+    if mode == "quiz":
+        if qNo < len(questions):
+            qData = questions[qNo]
+            img = draw_question(img, qData, selected, answered)
 
-    else:
+            if hands:
+                x, y = lmList[8][0:2]
+                fingers = detector.fingersUp(hands[0])
+
+                for i in range(4):
+                    bx, by = 100, 150 + i * 100
+                    bw, bh = 600, 80
+                    if bx < x < bx + bw and by < y < by + bh:
+                        selected = i
+                        if hoverStartTime[i] == 0:
+                            hoverStartTime[i] = time.time()
+                        elapsed = time.time() - hoverStartTime[i]
+                        if elapsed >= 2 and not answered:
+                            answered = True
+                            if selected == qData["answer"]:
+                                score += 1
+                            time.sleep(0.2)
+                            qNo += 1
+                            selected = -1
+                            answered = False
+                            hoverStartTime[i] = 0
+                        break
+                    else:
+                        hoverStartTime[i] = 0
+        else:
+            mode = "end"
+
+    # =========================
+    # 🎨 CHẾ ĐỘ VẼ
+    # =========================
+    elif mode == "draw":
+        img = draw_text_unicode(img, "CHẾ ĐỘ VẼ TAY", (30, 30), (255, 255, 0))
+        cv2.rectangle(img, (20, 60), (180, 120), (50, 50, 50), -1)
+        img = draw_text_unicode(img, "Xóa tất cả", (30, 75), (255, 255, 255))
+        colors = {"Đỏ": (0, 0, 255), "Xanh": (0, 255, 0), "Vàng": (0, 255, 255), "Trắng": (255, 255, 255)}
+        cx = 230
+        for cname, cval in colors.items():
+            cv2.rectangle(img, (cx, 60), (cx + 80, 120), cval, -1)
+            cx += 100
+
+        h, w, _ = img.shape
+        if drawCanvas.shape[:2] != (h, w):
+            drawCanvas = np.zeros((h, w, 3), np.uint8)
+
+        if hands:
+            x1, y1 = lmList[8][0:2]
+            fingers = detector.fingersUp(hands[0])
+            if 230 < x1 < 310 and 60 < y1 < 120 and fingers[1] == 1:
+                drawColor = (0, 0, 255)
+            elif 330 < x1 < 410 and 60 < y1 < 120 and fingers[1] == 1:
+                drawColor = (0, 255, 0)
+            elif 430 < x1 < 510 and 60 < y1 < 120 and fingers[1] == 1:
+                drawColor = (0, 255, 255)
+            elif 530 < x1 < 610 and 60 < y1 < 120 and fingers[1] == 1:
+                drawColor = (255, 255, 255)
+            if 20 < x1 < 180 and 60 < y1 < 120 and fingers[1] == 1:
+                drawCanvas = np.zeros((h, w, 3), np.uint8)
+            if fingers[1] == 1 and fingers[2] == 0:
+                if prevX == 0 and prevY == 0:
+                    prevX, prevY = x1, y1
+                cv2.line(drawCanvas, (prevX, prevY), (x1, y1), drawColor, 8)
+                prevX, prevY = x1, y1
+            elif fingers[1] == 1 and fingers[2] == 1:
+                cv2.circle(drawCanvas, (x1, y1), 40, (0, 0, 0), -1)
+                prevX, prevY = 0, 0
+            else:
+                prevX, prevY = 0, 0
+
+        img = cv2.addWeighted(img, 0.6, drawCanvas, 0.8, 0)
+
+    # =========================
+    # 🏁 KẾT THÚC QUIZ VỚI REPLAY
+    # =========================
+    elif mode == "end":
         overlay = img.copy()
-        cv2.rectangle(overlay, (150, 200), (800, 500), (50, 50, 50), -1)
+        cv2.rectangle(overlay, (200, 200), (760, 450), (50, 50, 50), -1)
         img = cv2.addWeighted(overlay, 0.4, img, 0.6, 0)
-        img = draw_text_unicode(img, "BÀI TRẮC NGHIỆM HOÀN THÀNH", (180, 250), (255, 255, 0))
-        img = draw_text_unicode(img, f"Điểm của bạn: {score}/{qTotal * 20}", (250, 350), (0, 255, 0))
+        img = draw_text_unicode(img, "🎉 BÀI TRẮC NGHIỆM HOÀN THÀNH 🎉", (220, 230), (255, 255, 0))
+        img = draw_text_unicode(img, f"Điểm của bạn: {score}/{len(questions)}", (320, 300), (0, 255, 0))
 
-    cv2.imshow("Hand Quiz - Minecraft Style", img)
-    if cv2.waitKey(1) & 0xFF == 27:
+        # Nút Replay
+        replayX, replayY, replayW, replayH = 350, 370, 250, 60
+        replayColor = (100, 100, 255)
+        hoverReplay = False
+
+        if hands:
+            x, y = lmList[8][0:2]
+            fingers = detector.fingersUp(hands[0])
+            if replayX < x < replayX + replayW and replayY < y < replayY + replayH:
+                hoverReplay = True
+                replayColor = (150, 150, 255)
+                if fingers[1] == 1 and time.time() - lastSwitchTime > 0.5:
+                    # Reset quiz
+                    qNo = 0
+                    score = 0
+                    selected = -1
+                    answered = False
+                    hoverStartTime = [0,0,0,0]
+                    mode = "quiz"
+                    lastSwitchTime = time.time()
+
+        cv2.rectangle(img, (replayX, replayY), (replayX + replayW, replayY + replayH), replayColor, -1)
+        img = draw_text_unicode(img, "REPLAY", (replayX + 60, replayY + 15), (255, 255, 255))
+        cv2.rectangle(img, (replayX, replayY), (replayX + replayW, replayY + replayH), (255, 255, 255), 2)
+
+    cv2.imshow("Quiz + Ve Tay", img)
+
+    key = cv2.waitKey(1) & 0xFF
+    if key == 27:  # ESC thoát
         break
+    elif key == ord('f') or key == ord('F'):  # Full screen
+        cv2.setWindowProperty("Quiz + Ve Tay", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    elif key == ord('n') or key == ord('N'):  # Trở về window bình thường
+        cv2.setWindowProperty("Quiz + Ve Tay", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
 
 cap.release()
 cv2.destroyAllWindows()
-
