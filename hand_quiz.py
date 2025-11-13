@@ -1,5 +1,6 @@
 import cv2
 import time
+import csv
 import numpy as np
 from cvzone.HandTrackingModule import HandDetector
 from PIL import ImageFont, ImageDraw, Image
@@ -15,15 +16,36 @@ detector = HandDetector(detectionCon=0.8)
 
 # --- Font tiếng Việt ---
 font_path = "arial.ttf"
-font = ImageFont.truetype(font_path, 32)
+font = ImageFont.truetype(font_path, 24)
+
+def draw_text_center(img, text, x, y, w, h, color=(255, 255, 255)):
+    """Vẽ chữ canh giữa trong rectangle (x,y,w,h)"""
+    img_pil = Image.fromarray(img)
+    draw = ImageDraw.Draw(img_pil)
+    
+    # Lấy bounding box của text
+    bbox = draw.textbbox((0,0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    text_x = x + (w - text_w)//2
+    text_y = y + (h - text_h)//2
+    draw.text((text_x, text_y), text, font=font, fill=color)
+    return np.array(img_pil)
+
+
 
 # --- Dữ liệu câu hỏi ---
-questions = [
-    {"question": "1 + 1 = ?", "options": ["1", "2", "3", "4"], "answer": 1},
-    {"question": "Thủ đô của Việt Nam là?", "options": ["Hà Nội", "Huế", "Đà Nẵng", "TP.HCM"], "answer": 0},
-    {"question": "3 * 3 = ?", "options": ["6", "7", "8", "9"], "answer": 3},
-]
-
+questions = []
+with open("Mcqs.csv", newline='', encoding='utf-8') as csvfile:
+    reader = csv.DictReader(csvfile)
+    for row in reader:
+        q = {
+            "question": row["question"],
+            "options": [row["option1"], row["option2"], row["option3"], row["option4"]],
+            "answer": row["options"].index(row["answer"]) if row["answer"] in [row["option1"], row["option2"], row["option3"], row["option4"]] else 0
+        }
+        questions.append(q)
 # --- Biến điều khiển ---
 qNo = 0
 score = 0
@@ -94,7 +116,7 @@ while True:
 
     colorHover = tuple(min(255, c + 50) for c in btnColor) if hover else btnColor
     cv2.rectangle(img, (btnX, btnY), (btnX + btnW, btnY + btnH), colorHover, -1)
-    img = draw_text_unicode(img, "ĐỔI CHẾ ĐỘ", (btnX + 15, btnY + 18), (255, 255, 255))
+    img = draw_text_center(img, "ĐỔI CHẾ ĐỘ", btnX, btnY, btnW, btnH, (255, 255, 255))
     cv2.rectangle(img, (btnX, btnY), (btnX + btnW, btnY + btnH), (255, 255, 255), 2)
 
     # =========================
