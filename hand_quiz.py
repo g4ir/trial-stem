@@ -40,6 +40,8 @@ def draw_text_unicode(img, text, pos, color=(255, 255, 255)):
 questions = []
 with open("Mcqs.csv", newline='', encoding='utf-8') as csvfile:
     reader = csv.DictReader(csvfile)
+    print(reader.fieldnames)
+
     for row in reader:
         q = {
             "question": row["question"],
@@ -137,26 +139,32 @@ while True:
 
                                 # --- Hiệu ứng ảnh đúng ---
                                 img_effect = cv2.imread("correct.png", cv2.IMREAD_UNCHANGED)
-                                if img_effect is not None:
-                                    ih, iw = img_effect.shape[:2]
-                                    h, w, _ = img.shape
-                                    max_dim = 300
-                                    scale = min(max_dim/iw, max_dim/ih, 1)
-                                    iw, ih = int(iw*scale), int(ih*scale)
-                                    img_effect = cv2.resize(img_effect, (iw, ih), interpolation=cv2.INTER_AREA)
-                                    x_offset = w//2 - iw//2
-                                    y_offset = h//2 - ih//2
-                                    if img_effect.shape[2]==4:
-                                        alpha = img_effect[:,:,3]/255.0
-                                        for c in range(3):
-                                            img[y_offset:y_offset+ih, x_offset:x_offset+iw, c] = (
-                                                alpha*img_effect[:,:,c]+
-                                                (1-alpha)*img[y_offset:y_offset+ih, x_offset:x_offset+iw, c]
-                                            )
-                                    else:
-                                        img[y_offset:y_offset+ih, x_offset:x_offset+iw] = img_effect
-                                    cv2.imshow("Quiz + Ve Tay", img)
-                                    cv2.waitKey(500)
+                            else:
+                                # --- Hiệu ứng ảnh sai ---
+                                img_effect = cv2.imread("wrong.png", cv2.IMREAD_UNCHANGED)
+
+                            # --- Hiển thị hiệu ứng (chung cho đúng hoặc sai) ---
+                            if img_effect is not None:
+                                ih, iw = img_effect.shape[:2]
+                                h, w, _ = img.shape
+                                max_dim = 300
+                                scale = min(max_dim/iw, max_dim/ih, 1)
+                                iw, ih = int(iw*scale), int(ih*scale)
+                                img_effect = cv2.resize(img_effect, (iw, ih), interpolation=cv2.INTER_AREA)
+                                x_offset = w//2 - iw//2
+                                y_offset = h//2 - ih//2
+                                if img_effect.shape[2]==4:
+                                    alpha = img_effect[:,:,3]/255.0
+                                    for c in range(3):
+                                        img[y_offset:y_offset+ih, x_offset:x_offset+iw, c] = (
+                                            alpha*img_effect[:,:,c] +
+                                            (1-alpha)*img[y_offset:y_offset+ih, x_offset:x_offset+iw, c]
+                                        )
+                                else:
+                                    img[y_offset:y_offset+ih, x_offset:x_offset+iw] = img_effect
+                                cv2.imshow("Quiz + Ve Tay", img)
+                                cv2.waitKey(500)
+
 
                             # --- Reset hover cho tất cả ô ---
                             hoverStartTime = [0,0,0,0]
