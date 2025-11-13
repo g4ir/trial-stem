@@ -4,6 +4,9 @@ import numpy as np
 from cvzone.HandTrackingModule import HandDetector
 from PIL import ImageFont, ImageDraw, Image
 
+cv2.namedWindow("Quiz + Ve Tay", cv2.WINDOW_NORMAL)  # Cho phép resize/fullscreen
+cv2.setWindowProperty("Quiz + Ve Tay", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)  # Bật full màn lúc khởi động (tùy chọn)
+
 # --- Cấu hình webcam ---
 cap = cv2.VideoCapture(0)
 cap.set(3, 960)
@@ -214,8 +217,9 @@ while True:
         break
     elif key == ord('f') or key == ord('F'):  # Full screen
         cv2.setWindowProperty("Quiz + Ve Tay", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-    elif key == ord('n') or key == ord('N'):  # Trở về window bình thường
+    elif key == ord('n') or key == ord('N'):  # Window bình thường
         cv2.setWindowProperty("Quiz + Ve Tay", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+
 
 cap.release()
 cv2.destroyAllWindows()
